@@ -1,4 +1,8 @@
-from rest_framework import viewsets
+from sqlite3 import IntegrityError
+
+from django.db import transaction
+from rest_framework import viewsets, serializers
+
 
 from cinema.models import Genre, Actor, CinemaHall, Movie, MovieSession, Order
 
@@ -11,7 +15,10 @@ from cinema.serializers import (
     MovieSessionListSerializer,
     MovieDetailSerializer,
     MovieSessionDetailSerializer,
-    MovieListSerializer, OrderSerializer, OrderListSerializer,
+    MovieListSerializer,
+    OrderSerializer,
+    OrderListSerializer,
+    OrderUpdateSerializer,
 )
 
 from cinema.paginations import OrderListPagination
@@ -55,7 +62,6 @@ class MovieViewSet(viewsets.ModelViewSet):
             None
         )
 
-        print(title)
         if actors:
             queryset = queryset.filter(actors__id__in=actors)
 
@@ -109,7 +115,11 @@ class MovieSessionViewSet(viewsets.ModelViewSet):
 
 
 class OrderViewSet(viewsets.ModelViewSet):
-    queryset = Order.objects.prefetch_related("tickets")
+    queryset = Order.objects.prefetch_related(
+        "tickets__movie_session",
+        "tickets__movie_session__movie",
+        "tickets__movie_session__cinema_hall"
+    )
     serializer_class = OrderSerializer
     pagination_class = OrderListPagination
 
@@ -121,8 +131,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.serializer_class
         if self.action == "list" or self.action == "retrieve":
             serializer = OrderListSerializer
+        if self.action == "update":
+            serializer = OrderUpdateSerializer
 
         return serializer
 
     def perform_create(self, serializer):
-        return serializer.save(user_id=self.request.user.id)
+        try:
+            with transaction.atomic():
+                return serializer.save(user_id=self.request.user.id)
+        except IntegrityError:
+            raise serializers.ValidationError({
+                "order": "Something went wrong."
+            })
