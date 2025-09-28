@@ -1,6 +1,4 @@
-from sqlite3 import IntegrityError
-
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from rest_framework import viewsets, serializers
 
 
